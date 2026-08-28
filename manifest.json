@@ -1,0 +1,29 @@
+{
+  "plugin_id":             "chronicle.plugin.wikipedia",
+  "name":                  "Wikipedia",
+  "version":               "1.0.0",
+  "author":                "Chronicle Contributors",
+  "description":           "Broad fallback summaries, article sections, and images from Wikipedia for any media type.",
+  "min_chronicle_version": "0.7.0",
+  "entry_type":            "Chronicle.Plugin.Wikipedia.WikipediaMetadataProvider",
+  "iconUrl":               "https://en.wikipedia.org/static/apple-touch/wikipedia.png",
+  "brandColorLight":       "#000000",
+  "brandColorDark":        "#F0F0F0",
+  "fixMatchHint":          "Paste a Wikipedia URL, or type lang:Page_Title (e.g. en:The_Batman_(film))",
+  "background_tasks": [
+    {
+      "task_id":         "fetch-missing-metadata",
+      "display_name":    "Fetch Missing Wikipedia Matches",
+      "description":     "Searches Wikipedia for items that don't have a match yet.",
+      "default_cron":    "0 5 * * *",
+      "default_enabled": true
+    },
+    {
+      "task_id":         "resync-all-metadata",
+      "display_name":    "Re-sync All Wikipedia Articles",
+      "description":     "Re-fetches article text/sections/images for all items already matched to Wikipedia. Articles change often — run this more frequently than most providers' resync task if you want fresh content.",
+      "default_cron":    "0 6 * * 0",
+      "default_enabled": false
+    }
+  ]
+}
