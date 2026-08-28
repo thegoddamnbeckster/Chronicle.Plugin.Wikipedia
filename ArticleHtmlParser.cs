@@ -50,7 +50,12 @@ internal static class ArticleHtmlParser
 
             // Collect images from every section, including ones we're about to skip the text
             // of — a "Further reading" section's book cover images are still legitimate images.
-            CollectImages(section, images, maxImages);
+            // No maxImages cap applied here — capping the raw stream before dedup would let a
+            // duplicate image (the same photo often appears in the infobox AND a gallery
+            // section) consume a slot that should have gone to a genuinely distinct image,
+            // silently under-delivering relative to the configured cap. Capped once, after
+            // dedup, below. Caught in review.
+            CollectImages(section, images);
 
             if (headingText is not null && BoilerplateHeadings.Contains(headingText))
             {
@@ -69,7 +74,33 @@ internal static class ArticleHtmlParser
                 sections.Add(new ArticleSection(headingText, level, text));
         }
 
-        return new ParsedArticle(sections, skipped, images.Distinct().Take(Math.Max(maxImages, 0)).ToList());
+        // Dedup by content identity (not raw URL — the same underlying file is served at
+        // different derived URLs for its full-size vs. thumbnail forms), THEN cap.
+        var dedupedImages = images
+            .DistinctBy(ExtractImageIdentity)
+            .Take(Math.Max(maxImages, 0))
+            .ToList();
+
+        return new ParsedArticle(sections, skipped, dedupedImages);
+    }
+
+    private static readonly Regex ThumbnailPrefixRe = new(@"^\d+px-(.+)$", RegexOptions.Compiled);
+
+    /// <summary>
+    /// Extracts a content-identity key from a Wikimedia image URL for dedup purposes. Exact
+    /// URL string equality fails to recognize the same underlying file at different derived
+    /// sizes — e.g. ".../thumb/f/f7/Poster.jpg/300px-Poster.jpg" and ".../f/f7/Poster.jpg" are
+    /// the same image, different URLs. Strips the query string, takes the last path segment,
+    /// strips a leading "NNNpx-" thumbnail-size prefix if present, then case/percent-decode
+    /// normalizes — so a thumbnail and its original resolve to the same identity.
+    /// </summary>
+    internal static string ExtractImageIdentity(string url)
+    {
+        var withoutQuery = url.Split('?')[0];
+        var lastSegment = withoutQuery.Split('/').LastOrDefault(s => !string.IsNullOrEmpty(s)) ?? withoutQuery;
+        var thumbMatch = ThumbnailPrefixRe.Match(lastSegment);
+        var baseName = thumbMatch.Success ? thumbMatch.Groups[1].Value : lastSegment;
+        return Uri.UnescapeDataString(baseName).ToLowerInvariant();
     }
 
     private static int ParseHeadingLevel(string tagName) =>
@@ -94,17 +125,13 @@ internal static class ArticleHtmlParser
             node.Remove();
     }
 
-    private static void CollectImages(HtmlNode section, List<string> images, int maxImages)
+    private static void CollectImages(HtmlNode section, List<string> images)
     {
-        if (images.Count >= maxImages) return;
-
         var imgNodes = section.SelectNodes(".//img");
         if (imgNodes is null) return;
 
         foreach (var img in imgNodes)
         {
-            if (images.Count >= maxImages) return;
-
             var src = img.GetAttributeValue("src", string.Empty);
             if (string.IsNullOrWhiteSpace(src)) continue;
 

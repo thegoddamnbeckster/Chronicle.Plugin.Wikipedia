@@ -201,6 +201,10 @@ internal sealed class WikipediaClient : IDisposable
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, url);
         var response = await SendWithRetryAsync(request, ct).ConfigureAwait(false);
+
+        if (!response.IsSuccessStatusCode)
+            PluginLog.Warn($"GetJsonAsync: {url} -> HTTP {(int)response.StatusCode} {response.StatusCode}");
+
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
     }

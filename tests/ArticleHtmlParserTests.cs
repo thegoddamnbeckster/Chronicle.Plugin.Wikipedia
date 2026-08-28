@@ -192,4 +192,57 @@ public class ArticleHtmlParserTests
         Assert.Null(born);
         Assert.Null(died);
     }
+
+    // ── Image identity extraction (dedup across thumbnail vs. original URLs) ──
+
+    [Theory]
+    [InlineData(
+        "https://upload.wikimedia.org/wikipedia/en/f/f7/The_Batman_%28film%29_poster.jpg",
+        "https://upload.wikimedia.org/wikipedia/en/thumb/f/f7/The_Batman_%28film%29_poster.jpg/300px-The_Batman_%28film%29_poster.jpg")]
+    [InlineData(
+        "https://upload.wikimedia.org/wikipedia/commons/1/10/Photo.jpg",
+        "https://upload.wikimedia.org/wikipedia/commons/thumb/1/10/Photo.jpg/250px-Photo.jpg?utm_source=en.wikipedia.org")]
+    public void ExtractImageIdentity_OriginalAndThumbnailUrls_ResolveToSameIdentity(string original, string thumbnail)
+    {
+        Assert.Equal(
+            ArticleHtmlParser.ExtractImageIdentity(original),
+            ArticleHtmlParser.ExtractImageIdentity(thumbnail));
+    }
+
+    [Fact]
+    public void ExtractImageIdentity_DifferentFiles_ResolveToDifferentIdentities()
+    {
+        var a = ArticleHtmlParser.ExtractImageIdentity("https://upload.wikimedia.org/wikipedia/en/f/f7/PosterA.jpg");
+        var b = ArticleHtmlParser.ExtractImageIdentity("https://upload.wikimedia.org/wikipedia/en/f/f7/PosterB.jpg");
+
+        Assert.NotEqual(a, b);
+    }
+
+    // ── Cap-before-dedup regression (a duplicate image must not consume a cap slot that
+    // should go to a genuinely distinct image) ──
+
+    [Fact]
+    public void Parse_DuplicateImageAcrossSections_DoesNotConsumeCapSlotFromDistinctImages()
+    {
+        // Same photo appears in the lead (infobox) AND again in Cast, at different derived
+        // sizes — a real, common Wikipedia pattern. A third, genuinely distinct image follows.
+        const string html = """
+            <html><body>
+            <section data-mw-section-id="0">
+              <p>Lead.</p>
+              <img src="//upload.wikimedia.org/x/f/f7/Same.jpg" data-file-width="1000" />
+            </section>
+            <section data-mw-section-id="1">
+              <h2 id="Cast">Cast</h2>
+              <img src="//upload.wikimedia.org/x/thumb/f/f7/Same.jpg/220px-Same.jpg" data-file-width="1000" />
+              <img src="//upload.wikimedia.org/x/f/f8/Distinct.jpg" data-file-width="1000" />
+            </section>
+            </body></html>
+            """;
+
+        var result = ArticleHtmlParser.Parse(html, maxImages: 2);
+
+        Assert.Equal(2, result.ImageUrls.Count);
+        Assert.Contains(result.ImageUrls, url => url.Contains("Distinct.jpg"));
+    }
 }

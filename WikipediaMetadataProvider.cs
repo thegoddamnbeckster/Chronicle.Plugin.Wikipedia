@@ -290,10 +290,16 @@ public sealed class WikipediaMetadataProvider : IMetadataProvider
     {
         EnsureConfigured();
 
-        var (lang, title) = ParseExternalId(externalId);
-        PluginLog.Info($"GetByIdAsync: externalId=\"{externalId}\" -> lang={lang}, title=\"{title}\"");
+        var (lang, requestedTitle) = ParseExternalId(externalId);
+        PluginLog.Info($"GetByIdAsync: externalId=\"{externalId}\" -> lang={lang}, title=\"{requestedTitle}\"");
 
-        var html = await FetchArticleHtmlWithRedirectRetryAsync(lang, title, ct).ConfigureAwait(false);
+        // `title` here is the EFFECTIVE title after any redirect resolution — every subsequent
+        // call (detail lookup, canonical title, rebuilt ExternalId) must use this, not
+        // `requestedTitle`. Using the stale pre-redirect title for GetPageDetailsAsync was a
+        // real bug caught in review: the detail call would silently miss (or hit the wrong
+        // stub page for) any article reached via a redirect, losing poster/categories/wikidata
+        // and re-triggering the same redirect dance on every future resync.
+        var (html, title) = await FetchArticleHtmlWithRedirectRetryAsync(requestedTitle, ct).ConfigureAwait(false);
         var parsed = ArticleHtmlParser.Parse(html, _maxImages);
         PluginLog.Debug($"GetByIdAsync: \"{title}\" parsed {parsed.Sections.Count} section(s), " +
                          $"skipped {parsed.SkippedSections.Count} boilerplate ({string.Join(", ", parsed.SkippedSections)}), " +
@@ -307,9 +313,14 @@ public sealed class WikipediaMetadataProvider : IMetadataProvider
             PluginLog.Debug($"GetByIdAsync: \"{title}\" born/died extracted: born={born:d}, died={(died is null ? "n/a" : $"{died:d}")}");
 
         var posterUrl = detail?.Original?.Source ?? detail?.Thumbnail?.Source;
+        var posterIdentity = posterUrl is null ? null : ArticleHtmlParser.ExtractImageIdentity(posterUrl);
         var tags = BuildTags(detail?.Categories);
         var additionalImages = parsed.ImageUrls
-            .Where(url => !string.Equals(url, posterUrl, StringComparison.Ordinal))
+            // Compare by extracted file identity, not raw URL — Wikipedia serves the same
+            // underlying file at different derived URLs (full-size vs. thumbnail path), so
+            // exact-string comparison let the poster image reappear once more as a near-
+            // duplicate "additional image." Caught in review.
+            .Where(url => posterIdentity is null || ArticleHtmlParser.ExtractImageIdentity(url) != posterIdentity)
             .Select(url => new AdditionalImage { Url = url, Type = "Article", ThumbnailUrl = url })
             .ToList();
 
@@ -332,11 +343,15 @@ public sealed class WikipediaMetadataProvider : IMetadataProvider
         };
     }
 
-    private async Task<string> FetchArticleHtmlWithRedirectRetryAsync(string lang, string title, CancellationToken ct)
+    /// <summary>Returns the article HTML plus the EFFECTIVE title it was ultimately fetched
+    /// under — the caller must use this returned title for every subsequent call, not the
+    /// title it passed in, since a redirect may have occurred.</summary>
+    private async Task<(string Html, string Title)> FetchArticleHtmlWithRedirectRetryAsync(string title, CancellationToken ct)
     {
         try
         {
-            return await _client!.GetArticleHtmlAsync(title, ct).ConfigureAwait(false);
+            var html = await _client!.GetArticleHtmlAsync(title, ct).ConfigureAwait(false);
+            return (html, title);
         }
         catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.NotFound)
         {
@@ -348,7 +363,8 @@ public sealed class WikipediaMetadataProvider : IMetadataProvider
                 throw;
             }
 
-            return await _client.GetArticleHtmlAsync(resolved, ct).ConfigureAwait(false);
+            var html = await _client.GetArticleHtmlAsync(resolved, ct).ConfigureAwait(false);
+            return (html, resolved);
         }
     }
 
