@@ -82,11 +82,13 @@ internal static class ArticleHtmlParser
         }
 
         // Dedup by content identity (not raw URL — the same underlying file is served at
-        // different derived URLs for its full-size vs. thumbnail forms), THEN cap.
-        var dedupedImages = images
-            .DistinctBy(ExtractImageIdentity)
-            .Take(Math.Max(maxImages, 0))
-            .ToList();
+        // different derived URLs for its full-size vs. thumbnail forms), THEN cap -- but only
+        // when the caller actually asked for a cap. maxImages <= 0 means unlimited (the
+        // default, per-user directive 2026-08-29: "grab everything... discard nothing") --
+        // Take(0) would silently store ZERO images, exactly backwards from what "no configured
+        // limit" should mean.
+        var deduped = images.DistinctBy(ExtractImageIdentity);
+        var dedupedImages = (maxImages > 0 ? deduped.Take(maxImages) : deduped).ToList();
 
         return new ParsedArticle(sections, skipped, dedupedImages);
     }

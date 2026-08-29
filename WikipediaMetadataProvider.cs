@@ -35,10 +35,14 @@ public sealed class WikipediaMetadataProvider : IMetadataProvider
 
     private WikipediaClient? _client;
     private string _language = "en";
-    private int _maxImages = 20;
+    // 0 = unlimited (default) -- per-user directive (2026-08-29): "grab everything that is
+    // available and store it in chronicle. you are not to discard anything." A positive value
+    // remains available for anyone who explicitly wants to bound storage for a heavily-
+    // illustrated article, but nothing is capped unless they opt into that themselves.
+    private int _maxImages = 0;
 
     /// <summary>Test-only constructor that injects a pre-built client.</summary>
-    internal WikipediaMetadataProvider(WikipediaClient client, string language = "en", int maxImages = 20)
+    internal WikipediaMetadataProvider(WikipediaClient client, string language = "en", int maxImages = 0)
     {
         _client = client;
         _language = language;
@@ -162,11 +166,13 @@ public sealed class WikipediaMetadataProvider : IMetadataProvider
                 Key = KeyMaxImages,
                 Label = "Max Images per Article",
                 Description = "Upper bound on how many images from one article are stored as " +
-                               "additional images. Prevents heavily-illustrated articles from " +
-                               "bloating stored metadata.",
+                               "additional images. 0 (default) means unlimited -- every image " +
+                               "the article has is stored, per Chronicle's own lossless-" +
+                               "ingestion rule. Set a positive number only if you specifically " +
+                               "want to bound storage for heavily-illustrated articles.",
                 Type = SettingType.Number,
                 Required = false,
-                DefaultValue = "20",
+                DefaultValue = "0",
             },
             new SettingDefinition
             {
@@ -211,7 +217,7 @@ public sealed class WikipediaMetadataProvider : IMetadataProvider
         }
 
         _language = string.IsNullOrWhiteSpace(language) ? "en" : language.Trim().ToLowerInvariant();
-        _maxImages = int.TryParse(maxImagesStr, out var mi) && mi > 0 ? mi : 20;
+        _maxImages = int.TryParse(maxImagesStr, out var mi) && mi > 0 ? mi : 0;
 
         var minInterval = int.TryParse(minIntervalStr, out var interval) ? interval : 100;
         var userAgent = $"Chronicle-Wikipedia-Plugin/{Version} (+{contactInfo})";
