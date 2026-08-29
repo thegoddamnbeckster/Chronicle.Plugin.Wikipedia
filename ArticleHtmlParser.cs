@@ -65,10 +65,17 @@ internal static class ArticleHtmlParser
 
             StripNonProseNodes(section);
 
+            // Each <p> cleaned individually (collapsing only that paragraph's own internal
+            // whitespace/line-wraps), then rejoined with a blank line between paragraphs --
+            // confirmed directly (2026-08-29) that joining with a single space and cleaning
+            // the whole lot afterward (CleanText's \s+ -> " " collapses newlines too) flattened
+            // every multi-paragraph article into one unbroken run of text, e.g. Chronicle's own
+            // overview field for a genuinely multi-paragraph lead section like "A Knight of the
+            // Seven Kingdoms" rendered as a single gigantic blob with no paragraph breaks at all.
             var paragraphs = section.SelectNodes(".//p");
             var text = paragraphs is null
                 ? string.Empty
-                : CleanText(string.Join(" ", paragraphs.Select(p => p.InnerText)));
+                : string.Join("\n\n", paragraphs.Select(p => CleanText(p.InnerText)).Where(t => t.Length > 0));
 
             if (headingText is not null || text.Length > 0)
                 sections.Add(new ArticleSection(headingText, level, text));
