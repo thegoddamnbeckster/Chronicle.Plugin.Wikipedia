@@ -400,10 +400,15 @@ public sealed class WikipediaMetadataProvider : IMetadataProvider
                 : null,
         };
 
-        // bornDate/diedDate are omitted entirely (not emitted as null) for the common case —
-        // they only appear when the regex actually matched a biography-style opening.
-        if (born is not null) payload["bornDate"] = born;
-        if (died is not null) payload["diedDate"] = died;
+        // birthDate/deathDate (matching Chronicle's MetadataResolutionService.FieldMap keys
+        // verbatim -- confirmed live 2026-08-30 that this plugin previously wrote "bornDate"/
+        // "diedDate" here, which nothing ever read: FieldMap's ["birth_date"]/["death_date"]
+        // look for "birthDate"/"deathDate", so every person's birth/death date silently never
+        // resolved onto MediaItem.BirthDate/DeathDate despite being parsed correctly right
+        // here) are omitted entirely (not emitted as null) for the common case -- they only
+        // appear when the regex actually matched a biography-style opening.
+        if (born is not null) payload["birthDate"] = born;
+        if (died is not null) payload["deathDate"] = died;
 
         return JsonSerializer.SerializeToElement(payload);
     }
