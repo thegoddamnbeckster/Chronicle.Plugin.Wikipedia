@@ -1,7 +1,7 @@
 {
   "plugin_id":             "chronicle.plugin.wikipedia",
   "name":                  "Wikipedia",
-  "version":               "1.0.0",
+  "version":               "1.0.1",
   "author":                "Chronicle Contributors",
   "description":           "Broad fallback summaries, article sections, and images from Wikipedia for any media type.",
   "min_chronicle_version": "0.7.0",
@@ -21,9 +21,9 @@
     {
       "task_id":         "resync-all-metadata",
       "display_name":    "Re-sync All Wikipedia Articles",
-      "description":     "Re-fetches article text/sections/images for all items already matched to Wikipedia. Articles change often — run this more frequently than most providers' resync task if you want fresh content.",
-      "default_cron":    "0 6 * * 0",
-      "default_enabled": false
+      "description":     "Re-fetches article text/sections/images for all items already matched to Wikipedia. Articles change often, so this defaults to daily (and on) rather than weekly/off, per-user request (2026-08-29): keep articles as up to date as possible.",
+      "default_cron":    "0 6 * * *",
+      "default_enabled": true
     }
   ]
 }
