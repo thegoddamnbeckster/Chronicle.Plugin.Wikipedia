@@ -102,6 +102,10 @@ public sealed class WikipediaMetadataProvider : IMetadataProvider
             InteractionVerb = "viewed",
             ProgressUnit = "percent",
             DefaultPriority = 90,
+            // A person is credited on other media (movies, shows, albums, books) -- never
+            // something watched/listened to on its own. Keeps it out of the tracked Library
+            // grid, which otherwise auto-tracks (Unwatched) every root-level item.
+            IsTrackable = false,
             SupportedFields = ["title", "overview", "poster_url", "tags", "extended_data",
                                 "birth_date", "death_date"],
         },
