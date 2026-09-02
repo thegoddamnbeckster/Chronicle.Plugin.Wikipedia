@@ -1,10 +1,42 @@
 using System.Net;
+using Chronicle.Plugins.Models;
 using Xunit;
 
 namespace Chronicle.Plugin.Wikipedia.Tests;
 
 public class WikipediaMetadataProviderTests
 {
+    /// <summary>
+    /// Regression test for a real production bug: SearchAsync passed Wikipedia's raw,
+    /// disambiguated page title ("The Batman (film)") straight through as the candidate's
+    /// display Title, which then flowed into Chronicle's own dedup/stub-creation logic as a
+    /// literal string -- creating a second "The Batman (film)" MediaItem alongside the
+    /// existing "The Batman" one instead of matching it. ExternalId must keep the
+    /// disambiguator (it's part of the article's real identity on Wikipedia); only Title
+    /// gets it stripped.
+    /// </summary>
+    [Fact]
+    public async Task SearchAsync_CandidateTitleHasDisambiguationSuffix_StripsItFromDisplayTitleNotExternalId()
+    {
+        var handler = new StubHandler(_ =>
+            new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    """{"query":{"pages":[{"pageid":1,"title":"The Batman (film)","index":1,"extract":"2022 superhero film."}]}}"""),
+            });
+
+        var client = new WikipediaClient(new HttpClient(handler), "en", minRequestIntervalMs: 1);
+        var provider = new WikipediaMetadataProvider(client, "en", maxImages: 20);
+        var context = new MediaSearchContext(Name: "The Batman", MediaTypeName: "movies");
+
+        var results = await provider.SearchAsync(context, CancellationToken.None);
+
+        var candidate = Assert.Single(results);
+        Assert.Equal("The Batman", candidate.Metadata.Title);
+        Assert.Equal("wikipedia:en:The_Batman_(film)", candidate.Metadata.ExternalId);
+    }
+
+
     /// <summary>
     /// Regression test for a review-caught bug: after GetArticleHtmlAsync 404s on the
     /// requested title and resolves through a redirect, the SUBSEQUENT detail lookup
@@ -74,7 +106,10 @@ public class WikipediaMetadataProviderTests
         // And the result should actually carry the poster the detail call returned — proving
         // the detail lookup wasn't silently skipped/empty.
         Assert.Equal("https://upload.wikimedia.org/x/poster.jpg", result.PosterUrl);
-        Assert.Equal("The Batman (film)", result.Title);
+        // Display Title has the disambiguator stripped; ExternalId keeps it (it's part of the
+        // article's actual identity on Wikipedia -- see WikipediaScoring.StripDisambiguationSuffix).
+        Assert.Equal("The Batman", result.Title);
+        Assert.Equal("wikipedia:en:The_Batman_(film)", result.ExternalId);
     }
 }
 // StubHandler is defined once, in WikipediaClientTests.cs, and reused here (same namespace).

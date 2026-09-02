@@ -265,9 +265,11 @@ public sealed class WikipediaMetadataProvider : IMetadataProvider
 
             var metadata = new MediaMetadata
             {
+                // ExternalId keeps page.Title's disambiguator (it's part of the article's
+                // actual identity on Wikipedia) -- only the display Title gets it stripped.
                 ExternalId = BuildExternalId(_language, page.Title),
                 Source = "wikipedia",
-                Title = page.Title,
+                Title = WikipediaScoring.StripDisambiguationSuffix(page.Title),
                 Overview = page.Extract,
                 PosterUrl = page.Thumbnail?.Source,
             };
@@ -342,9 +344,11 @@ public sealed class WikipediaMetadataProvider : IMetadataProvider
 
         return new MediaMetadata
         {
+            // ExternalId/ExtendedData keep canonicalTitle's disambiguator (it's part of the
+            // article's actual identity on Wikipedia) -- only the display Title gets it stripped.
             ExternalId = BuildExternalId(lang, canonicalTitle),
             Source = "wikipedia",
-            Title = canonicalTitle,
+            Title = WikipediaScoring.StripDisambiguationSuffix(canonicalTitle),
             Overview = leadText,
             PosterUrl = posterUrl,
             Tags = tags,

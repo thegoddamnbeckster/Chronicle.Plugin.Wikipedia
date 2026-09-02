@@ -20,6 +20,13 @@ internal static class WikipediaScoring
     private static readonly Regex NonWordRe = new(@"[^\w\s]", RegexOptions.Compiled);
     private static readonly Regex YearRe = new(@"\b(1[89]\d{2}|20\d{2})\b", RegexOptions.Compiled);
 
+    /// <summary>Strips a trailing Wikipedia disambiguation parenthetical -- "(film)",
+    /// "(1982 film)", "(TV series)", etc. -- from a page title for DISPLAY purposes only.
+    /// Never apply this to a page title used as (or to build) an ExternalId: two distinct
+    /// Wikipedia articles like "Barbie (film)" and "Barbie (doll)" only stay distinguishable
+    /// because of the parenthetical, which is exactly what Wikipedia disambiguation is for.</summary>
+    public static string StripDisambiguationSuffix(string title) => DisambiguationSuffixRe.Replace(title, string.Empty);
+
     /// <summary>Occupation/genre keyword sets per Chronicle media type. Music varies by
     /// hierarchy level (artist vs. album vs. track); everything else is level-independent.</summary>
     private static IReadOnlyList<string> GetTypeKeywords(string? mediaTypeName, int hierarchyLevel)
