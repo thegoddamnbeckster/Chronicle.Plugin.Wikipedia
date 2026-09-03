@@ -81,6 +81,44 @@ public class WikipediaScoringTests
         Assert.False(result.HardReject);
     }
 
+    // ── Season-specific articles (level-0 show searches only) ───────────────────
+
+    [Theory]
+    [InlineData("3rd Rock from the Sun season 1")]
+    [InlineData("3rd Rock from the Sun (season 1)")]
+    [InlineData("3rd Rock from the Sun series 1")]
+    public void Score_SeasonSpecificTitle_AtLevel0_HardRejectsRegardlessOfOtherSignals(string candidateTitle)
+    {
+        // Regression test for a real production bug: "3rd Rock from the Sun season 1" out-
+        // scored the show's own article for a level-0 show search (top score 77, driven by
+        // high title similarity, a generic "television series" description satisfying the
+        // type-keyword signal, and year corroboration) -- so the show's own Name field got set
+        // to "3rd Rock from the Sun season 1" instead of just "3rd Rock from the Sun". A
+        // season-specific article must never win a level-0 search, no matter how well it
+        // otherwise scores.
+        var context = new MediaSearchContext(
+            Name: "3rd Rock from the Sun", MediaTypeName: "tv", HierarchyLevel: 0, Year: 1996);
+        var result = WikipediaScoring.Score(
+            context, Page(candidateTitle, description: "Season of an American television series"));
+
+        Assert.True(result.HardReject);
+        Assert.Equal(0, result.Score);
+    }
+
+    [Fact]
+    public void Score_SeasonSpecificTitle_AtLevel1_DoesNotHardReject()
+    {
+        // The same title shape is exactly correct when the search context IS the season --
+        // this rule must only fire for level-0 (whole-show) searches.
+        var context = new MediaSearchContext(
+            Name: "Season 1", MediaTypeName: "tv", HierarchyLevel: 1,
+            ParentName: "3rd Rock from the Sun");
+        var result = WikipediaScoring.Score(
+            context, Page("3rd Rock from the Sun season 1", description: "Season of an American television series"));
+
+        Assert.False(result.HardReject);
+    }
+
     // ── Disambiguation pages ─────────────────────────────────────────────────
 
     [Fact]

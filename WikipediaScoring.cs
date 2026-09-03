@@ -20,6 +20,17 @@ internal static class WikipediaScoring
     private static readonly Regex NonWordRe = new(@"[^\w\s]", RegexOptions.Compiled);
     private static readonly Regex YearRe = new(@"\b(1[89]\d{2}|20\d{2})\b", RegexOptions.Compiled);
 
+    /// <summary>Matches a Wikipedia article title that's about one SEASON of a TV show rather
+    /// than the show itself -- "3rd Rock from the Sun season 1", "Fargo (season 3)", "Doctor
+    /// Who series 12" -- in either the bare or parenthetical convention Wikipedia uses for
+    /// these. Used to hard-reject such a candidate for a level-0 (whole-show) search: the two
+    /// are different articles about different things, and no amount of title/type/year scoring
+    /// should let a season-specific page stand in for the show's own page. Never applied at
+    /// level 1+, where matching exactly this kind of article is the correct outcome.</summary>
+    private static readonly Regex SeasonSpecificTitleRe = new(
+        @"\b(?:season|series)\s+(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten)\b",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
     /// <summary>Strips a trailing Wikipedia disambiguation parenthetical -- "(film)",
     /// "(1982 film)", "(TV series)", etc. -- from a page title for DISPLAY purposes only.
     /// Never apply this to a page title used as (or to build) an ExternalId: two distinct
@@ -58,6 +69,18 @@ internal static class WikipediaScoring
         // Hard-reject: disambiguation page (a list of links, not an article about the item).
         if (candidate.PageProps?.Disambiguation is not null)
             return new ScoreResult(0, "disambiguation page", HardReject: true);
+
+        // Hard-reject: a season-specific article standing in for a level-0 show search.
+        // Confirmed live (2026-09-03): "3rd Rock from the Sun season 1" out-scored the show's
+        // own article for a level-0 "3rd Rock from the Sun" query -- its generic, templated
+        // Wikidata description ("season of an American television series") satisfies the
+        // type-keyword signal at least as well as the show's own often genre-specific
+        // description ("sitcom") does, while title similarity and year corroboration both
+        // still score highly since a season article necessarily repeats the show's name and
+        // premiere year. No combination of the other signals can reliably tell these apart, so
+        // this checks the actual title shape directly instead.
+        if (context.HierarchyLevel == 0 && SeasonSpecificTitleRe.IsMatch(candidate.Title))
+            return new ScoreResult(0, "season-specific article, not the show itself", HardReject: true);
 
         var reasons = new List<string>();
         var score = 0;
