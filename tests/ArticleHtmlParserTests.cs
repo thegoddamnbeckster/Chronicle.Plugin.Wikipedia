@@ -175,6 +175,34 @@ public class ArticleHtmlParserTests
     }
 
     [Fact]
+    public void TryExtractBornDied_DeceasedPerson_BareDashDateRange_ExtractsBothDates()
+    {
+        // Regression test for a real production bug: a large share of deceased people's
+        // Wikipedia articles use a bare dash-separated date range with no "born"/"died"
+        // words at all -- Louis Armstrong's actual lead text is exactly this shape --
+        // which the "(born X; died Y)" pattern alone never matched, so both dates came
+        // back null and a genuinely deceased person showed up as if still alive.
+        var (born, died) = ArticleHtmlParser.TryExtractBornDied(
+            "Louis Daniel Armstrong (August 4, 1901 – July 6, 1971), nicknamed \"Satchmo\", " +
+            "was an American jazz and blues trumpeter and vocalist.");
+
+        Assert.Equal(new DateTime(1901, 8, 4), born);
+        Assert.Equal(new DateTime(1971, 7, 6), died);
+    }
+
+    [Fact]
+    public void TryExtractBornDied_DeceasedPerson_BareHyphenDateRange_ExtractsBothDates()
+    {
+        // Same bare-range convention but with a plain ASCII hyphen instead of an en dash --
+        // Wikipedia's own markup isn't perfectly consistent about which character it uses.
+        var (born, died) = ArticleHtmlParser.TryExtractBornDied(
+            "Some Person (January 1, 1920 - December 31, 1999) was an actor.");
+
+        Assert.Equal(new DateTime(1920, 1, 1), born);
+        Assert.Equal(new DateTime(1999, 12, 31), died);
+    }
+
+    [Fact]
     public void TryExtractBornDied_NonBiographicalText_ReturnsNulls()
     {
         var (born, died) = ArticleHtmlParser.TryExtractBornDied(

@@ -1,7 +1,7 @@
 {
   "plugin_id":             "chronicle.plugin.wikipedia",
   "name":                  "Wikipedia",
-  "version":               "1.0.4",
+  "version":               "1.0.5",
   "author":                "Chronicle Contributors",
   "description":           "Broad fallback summaries, article sections, and images from Wikipedia for any media type.",
   "min_chronicle_version": "0.7.0",

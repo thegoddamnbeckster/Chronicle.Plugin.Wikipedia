@@ -167,15 +167,21 @@ internal static class ArticleHtmlParser
 
     /// <summary>
     /// Best-effort regex over the lead section's plain text. Wikipedia biography articles
-    /// overwhelmingly open with "{Full Name} (born {Month} {Day}, {Year})" or, for the
-    /// deceased, "(born ...; died ...)". This is a heuristic over prose, not a structured
-    /// API field — it will miss unconventional openings and must fail silently (return
-    /// nulls) rather than throw. Applies uniformly to every article; it simply never matches
-    /// non-biographical content, so it doesn't need to be gated by media type (GetByIdAsync
-    /// has no type context to gate on anyway).
+    /// overwhelmingly open with "{Full Name} (born {Month} {Day}, {Year})" for a living
+    /// person, or "(born ...; died ...)" for a deceased one. But a large share of deceased
+    /// people's articles instead use a bare dash-separated date range with no "born"/"died"
+    /// words at all -- "{Full Name} (August 4, 1901 – July 6, 1971), ..." -- confirmed live
+    /// (2026-09-03): this second convention matched neither alternative, so both dates came
+    /// back null and a genuinely deceased person (Louis Armstrong, Bea Arthur, ...) showed up
+    /// with no death date at all, i.e. as if still alive. This is a heuristic over prose, not
+    /// a structured API field — it will miss unconventional openings and must fail silently
+    /// (return nulls) rather than throw. Applies uniformly to every article; it simply never
+    /// matches non-biographical content, so it doesn't need to be gated by media type
+    /// (GetByIdAsync has no type context to gate on anyway).
     /// </summary>
     private static readonly Regex BornDiedRe = new(
-        @"\(born\s+([A-Z][a-z]+ \d{1,2},\s*\d{4})(?:\s*;\s*died\s+([A-Z][a-z]+ \d{1,2},\s*\d{4}))?\)",
+        @"\(born\s+([A-Z][a-z]+ \d{1,2},\s*\d{4})(?:\s*;\s*died\s+([A-Z][a-z]+ \d{1,2},\s*\d{4}))?\)" +
+        @"|\(([A-Z][a-z]+ \d{1,2},\s*\d{4})\s*[-–—]\s*([A-Z][a-z]+ \d{1,2},\s*\d{4})\)",
         RegexOptions.Compiled);
 
     public static (DateTime? Born, DateTime? Died) TryExtractBornDied(string leadText)
@@ -183,8 +189,13 @@ internal static class ArticleHtmlParser
         var match = BornDiedRe.Match(leadText);
         if (!match.Success) return (null, null);
 
-        DateTime? born = DateTime.TryParse(match.Groups[1].Value, out var b) ? b : null;
-        DateTime? died = match.Groups[2].Success && DateTime.TryParse(match.Groups[2].Value, out var d)
+        // Two mutually-exclusive alternatives: "(born X; died Y)" populates groups 1/2, the
+        // bare "(X – Y)" dash-range populates groups 3/4 instead.
+        var bornText = match.Groups[1].Success ? match.Groups[1].Value : match.Groups[3].Value;
+        var diedText = match.Groups[2].Success ? match.Groups[2].Value : match.Groups[4].Value;
+
+        DateTime? born = DateTime.TryParse(bornText, out var b) ? b : null;
+        DateTime? died = !string.IsNullOrEmpty(diedText) && DateTime.TryParse(diedText, out var d)
             ? d
             : null;
 
