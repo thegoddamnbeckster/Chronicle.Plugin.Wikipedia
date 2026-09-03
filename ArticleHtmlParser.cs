@@ -172,16 +172,19 @@ internal static class ArticleHtmlParser
     /// people's articles instead use a bare dash-separated date range with no "born"/"died"
     /// words at all -- "{Full Name} (August 4, 1901 – July 6, 1971), ..." -- confirmed live
     /// (2026-09-03): this second convention matched neither alternative, so both dates came
-    /// back null and a genuinely deceased person (Louis Armstrong, Bea Arthur, ...) showed up
-    /// with no death date at all, i.e. as if still alive. This is a heuristic over prose, not
-    /// a structured API field — it will miss unconventional openings and must fail silently
-    /// (return nulls) rather than throw. Applies uniformly to every article; it simply never
-    /// matches non-biographical content, so it doesn't need to be gated by media type
-    /// (GetByIdAsync has no type context to gate on anyway).
+    /// back null and a genuinely deceased person (Louis Armstrong, ...) showed up with no
+    /// death date at all, i.e. as if still alive. A third convention prefixes that same bare
+    /// range with a birth-name swap when the subject is best known by a different name --
+    /// Bea Arthur's actual lead text is "(born Bernice Frankel; May 13, 1922 – April 25,
+    /// 2009)" -- also confirmed live to slip past both other alternatives the same way. This
+    /// is a heuristic over prose, not a structured API field — it will miss unconventional
+    /// openings and must fail silently (return nulls) rather than throw. Applies uniformly to
+    /// every article; it simply never matches non-biographical content, so it doesn't need to
+    /// be gated by media type (GetByIdAsync has no type context to gate on anyway).
     /// </summary>
     private static readonly Regex BornDiedRe = new(
         @"\(born\s+([A-Z][a-z]+ \d{1,2},\s*\d{4})(?:\s*;\s*died\s+([A-Z][a-z]+ \d{1,2},\s*\d{4}))?\)" +
-        @"|\(([A-Z][a-z]+ \d{1,2},\s*\d{4})\s*[-–—]\s*([A-Z][a-z]+ \d{1,2},\s*\d{4})\)",
+        @"|\((?:born\s+[^;()]+;\s*)?([A-Z][a-z]+ \d{1,2},\s*\d{4})\s*[-–—]\s*([A-Z][a-z]+ \d{1,2},\s*\d{4})\)",
         RegexOptions.Compiled);
 
     public static (DateTime? Born, DateTime? Died) TryExtractBornDied(string leadText)

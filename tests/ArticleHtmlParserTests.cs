@@ -191,6 +191,22 @@ public class ArticleHtmlParserTests
     }
 
     [Fact]
+    public void TryExtractBornDied_DeceasedPerson_BirthNameSwapBeforeDateRange_ExtractsBothDates()
+    {
+        // Regression test for a real production bug: when a deceased subject is best known by
+        // a different name than they were born with, Wikipedia prefixes the bare date-range
+        // convention with a birth-name swap -- Bea Arthur's actual lead text is exactly this
+        // shape -- which slipped past both other alternatives the same way the plain bare
+        // range did, so she also showed up with no death date, as if still alive.
+        var (born, died) = ArticleHtmlParser.TryExtractBornDied(
+            "Beatrice Arthur (born Bernice Frankel; May 13, 1922 – April 25, 2009) was an " +
+            "American actress, comedian, and singer.");
+
+        Assert.Equal(new DateTime(1922, 5, 13), born);
+        Assert.Equal(new DateTime(2009, 4, 25), died);
+    }
+
+    [Fact]
     public void TryExtractBornDied_DeceasedPerson_BareHyphenDateRange_ExtractsBothDates()
     {
         // Same bare-range convention but with a plain ASCII hyphen instead of an en dash --
