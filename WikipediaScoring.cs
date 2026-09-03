@@ -17,6 +17,7 @@ internal static class WikipediaScoring
     private const int MinScoreToReturn = 20;
 
     private static readonly Regex DisambiguationSuffixRe = new(@"\s*\([^)]*\)\s*$", RegexOptions.Compiled);
+    private static readonly Regex DisambiguationSuffixCaptureRe = new(@"\(([^)]*)\)\s*$", RegexOptions.Compiled);
     private static readonly Regex NonWordRe = new(@"[^\w\s]", RegexOptions.Compiled);
     private static readonly Regex YearRe = new(@"\b(1[89]\d{2}|20\d{2})\b", RegexOptions.Compiled);
 
@@ -37,6 +38,21 @@ internal static class WikipediaScoring
     /// Wikipedia articles like "Barbie (film)" and "Barbie (doll)" only stay distinguishable
     /// because of the parenthetical, which is exactly what Wikipedia disambiguation is for.</summary>
     public static string StripDisambiguationSuffix(string title) => DisambiguationSuffixRe.Replace(title, string.Empty);
+
+    /// <summary>Returns just the disambiguator text itself -- "actor" from "Michael Lerner
+    /// (actor)", "1982 film" from "Poltergeist (1982 film)" -- or null when the title carries
+    /// none. Per-user request (2026-09-03): the disambiguator is genuinely useful data (Wikipedia
+    /// only disambiguates a title when ANOTHER article shares the bare name, which is exactly
+    /// the situation where two different real people/works can collide onto one Chronicle item)
+    /// even though it must never appear in the display Title -- store it explicitly in
+    /// ExtendedData instead of leaving it merely inferable from ExternalId/wikipediaUrl, so
+    /// future dedup/collision-detection tooling can query it directly rather than re-parsing an
+    /// opaque identifier string.</summary>
+    public static string? ExtractDisambiguator(string title)
+    {
+        var match = DisambiguationSuffixCaptureRe.Match(title);
+        return match.Success && match.Groups[1].Value.Length > 0 ? match.Groups[1].Value : null;
+    }
 
     /// <summary>Occupation/genre keyword sets per Chronicle media type. Music varies by
     /// hierarchy level (artist vs. album vs. track); everything else is level-independent.</summary>

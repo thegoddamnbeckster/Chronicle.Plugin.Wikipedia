@@ -40,6 +40,33 @@ public class WikipediaScoringTests
         Assert.Equal(45, result.Score);
     }
 
+    // ── ExtractDisambiguator ─────────────────────────────────────────────────
+
+    [Theory]
+    [InlineData("Michael Lerner (actor)", "actor")]
+    [InlineData("Poltergeist (1982 film)", "1982 film")]
+    [InlineData("Barbie (doll)", "doll")]
+    public void ExtractDisambiguator_TitleWithTrailingParenthetical_ReturnsItsContent(string title, string expected)
+    {
+        Assert.Equal(expected, WikipediaScoring.ExtractDisambiguator(title));
+    }
+
+    [Theory]
+    [InlineData("Michael Lerner")]
+    [InlineData("The Batman")]
+    public void ExtractDisambiguator_TitleWithNoParenthetical_ReturnsNull(string title)
+    {
+        Assert.Null(WikipediaScoring.ExtractDisambiguator(title));
+    }
+
+    [Fact]
+    public void ExtractDisambiguator_EmptyParentheses_ReturnsNull()
+    {
+        // Degenerate input ("Some Title ()") -- an empty capture is treated the same as no
+        // disambiguator at all, not as a zero-length string worth storing.
+        Assert.Null(WikipediaScoring.ExtractDisambiguator("Some Title ()"));
+    }
+
     [Fact]
     public void Score_CompletelyUnrelatedTitle_ScoresZeroTitleSignal()
     {

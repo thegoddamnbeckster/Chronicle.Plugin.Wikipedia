@@ -402,6 +402,11 @@ public sealed class WikipediaMetadataProvider : IMetadataProvider
             ["ids"] = detail?.PageProps?.WikibaseItem is { } wikidataId
                 ? new { wikidata = wikidataId }
                 : null,
+            // Explicit, queryable field for the parenthetical Wikipedia disambiguated this
+            // TITLE with (e.g. "actor", "1982 film") -- null when the title carried none. See
+            // WikipediaScoring.ExtractDisambiguator's own doc for why this is worth keeping as
+            // real data even though it must never surface in the display Title itself.
+            ["disambiguator"] = WikipediaScoring.ExtractDisambiguator(title),
         };
 
         // birthDate/deathDate (matching Chronicle's MetadataResolutionService.FieldMap keys
