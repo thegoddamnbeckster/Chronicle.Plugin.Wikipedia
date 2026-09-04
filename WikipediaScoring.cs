@@ -115,6 +115,27 @@ internal static class WikipediaScoring
         else
         {
             var similarity = JaccardSimilarity(cn, qn);
+
+            // Jaccard is a set comparison -- it can't tell "Martin Quinn" from "Quinn Martin"
+            // apart, since both normalize to the identical token set {martin, quinn} and score a
+            // "perfect" 1.0 despite word order being exactly what makes them two different real
+            // people. Confirmed live (2026-09-02): a "Martin Quinn" (Star Trek: Strange New
+            // Worlds actor) search matched the unrelated "Quinn Martin" (1922-1987 TV producer)
+            // article this way, and Chronicle's enrichment pipeline had already merged the wrong
+            // bio/photo onto the item by the time its own duplicate-id check caught the mismatch
+            // downstream. Reaching similarity >= 0.999 here (cn != qn was already established
+            // above) can only mean an identical token SET in a different arrangement -- for
+            // "people" specifically, that's the textbook signature of a different real
+            // individual, not a legitimate spelling/formatting variant, unlike movie/show titles
+            // where word order rarely carries identity. Hard-reject rather than score it as
+            // near-exact.
+            if (similarity >= 0.999 &&
+                string.Equals(context.MediaTypeName, "people", StringComparison.OrdinalIgnoreCase))
+            {
+                return new ScoreResult(0,
+                    $"person name tokens reordered: \"{candidateTitle}\" vs \"{queryName}\"", HardReject: true);
+            }
+
             if (similarity >= 0.5)
             {
                 var points = (int)Math.Round(45 * similarity);

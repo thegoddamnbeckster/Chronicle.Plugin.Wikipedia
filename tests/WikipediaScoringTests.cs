@@ -40,6 +40,36 @@ public class WikipediaScoringTests
         Assert.Equal(45, result.Score);
     }
 
+    [Fact]
+    public void Score_PeopleReorderedNameTokens_HardRejects()
+    {
+        // Confirmed live (2026-09-02): a "Martin Quinn" (Strange New Worlds actor) search
+        // matched the unrelated "Quinn Martin" (1922-1987 TV producer) article -- Jaccard
+        // similarity can't distinguish a set of tokens from its reordering, and scored this a
+        // "perfect" 45-point title match. For "people" this must hard-reject, not merely
+        // score lower, since a same-token different-order candidate is a different real person.
+        var context = new MediaSearchContext(Name: "Martin Quinn", MediaTypeName: "people");
+        var result = WikipediaScoring.Score(context,
+            Page("Quinn Martin", description: "American television producer"));
+
+        Assert.Equal(0, result.Score);
+        Assert.True(result.HardReject);
+    }
+
+    [Fact]
+    public void Score_NonPeopleReorderedTitleTokens_StillScoresBySimilarity()
+    {
+        // The hard-reject above is scoped to "people" only -- movie/show titles don't carry the
+        // same "reordering means a different real-world identity" guarantee, so a coincidental
+        // reordering there should still be scored (not silently rejected) like any other
+        // high-Jaccard partial match.
+        var context = new MediaSearchContext(Name: "Martin Quinn", MediaTypeName: "movies");
+        var result = WikipediaScoring.Score(context, Page("Quinn Martin"));
+
+        Assert.Equal(45, result.Score);
+        Assert.False(result.HardReject);
+    }
+
     // ── ExtractDisambiguator ─────────────────────────────────────────────────
 
     [Theory]
