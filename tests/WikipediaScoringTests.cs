@@ -176,6 +176,44 @@ public class WikipediaScoringTests
         Assert.False(result.HardReject);
     }
 
+    // ── Discography/filmography/bibliography list pages (level-0 artist/people searches only) ──
+
+    [Theory]
+    [InlineData("Limp Bizkit discography")]
+    [InlineData("Tom Hanks filmography")]
+    [InlineData("Stephen King bibliography")]
+    public void Score_DiscographyFilmographyBibliographyTitle_AtLevel0_HardRejects(string candidateTitle)
+    {
+        // Regression test for a real production bug (2026-08-03): a level-0 "Limp Bizkit"
+        // artist search matched "Limp Bizkit discography" -- the artist's own name appears
+        // verbatim as a prefix so title similarity scores it highly, and a generic "American
+        // band" description satisfies the type-keyword signal just as well as the band's own
+        // article would. Chronicle's core enrichment then used the article's own title as the
+        // artist item's Name. A discography/filmography/bibliography list page must never win
+        // a level-0 artist/person search, no matter how well it otherwise scores.
+        var context = new MediaSearchContext(
+            Name: "Limp Bizkit", MediaTypeName: "music", HierarchyLevel: 0);
+        var result = WikipediaScoring.Score(
+            context, Page(candidateTitle, description: "Discography of an American band"));
+
+        Assert.True(result.HardReject);
+        Assert.Equal(0, result.Score);
+    }
+
+    [Fact]
+    public void Score_DiscographyTitle_AtLevel1_DoesNotHardReject()
+    {
+        // A track/album can legitimately be named this way (rare, but not this rule's concern) --
+        // the hard-reject must only fire for level-0 (whole-artist) searches.
+        var context = new MediaSearchContext(
+            Name: "Some Compilation", MediaTypeName: "music", HierarchyLevel: 1,
+            ParentName: "Limp Bizkit");
+        var result = WikipediaScoring.Score(
+            context, Page("Limp Bizkit discography", description: "Discography of an American band"));
+
+        Assert.False(result.HardReject);
+    }
+
     // ── Disambiguation pages ─────────────────────────────────────────────────
 
     [Fact]

@@ -32,6 +32,21 @@ internal static class WikipediaScoring
         @"\b(?:season|series)\s+(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten)\b",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
+    /// <summary>Matches a Wikipedia article title that's a discography/filmography/bibliography
+    /// LIST page for an artist/creator rather than that person or group's own page --
+    /// "Limp Bizkit discography", "Tom Hanks filmography" -- same class of bug as
+    /// SeasonSpecificTitleRe above, for level-0 artist/people searches instead of level-0 show
+    /// searches. Confirmed live (2026-08-03): a level-0 "Limp Bizkit" artist search matched
+    /// "Limp Bizkit discography" -- title similarity necessarily scores this kind of article
+    /// highly since the subject's own name appears verbatim as a prefix, and Chronicle's core
+    /// enrichment then used the article's own title as this artist item's Name (a separate,
+    /// unrelated bug in the FanartTV plugin's own album-artwork fallback independently caused
+    /// this same artist item to absorb 19 real albums via merge -- see that plugin's own fix --
+    /// but the wrong "discography" name is this Wikipedia-side bug's doing on its own). Never
+    /// applied at level 1+, where a track/album/episode legitimately can be titled this way.</summary>
+    private static readonly Regex DiscographySpecificTitleRe = new(
+        @"\b(?:discography|filmography|bibliography)\b", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
     /// <summary>Strips a trailing Wikipedia disambiguation parenthetical -- "(film)",
     /// "(1982 film)", "(TV series)", etc. -- from a page title for DISPLAY purposes only.
     /// Never apply this to a page title used as (or to build) an ExternalId: two distinct
@@ -97,6 +112,11 @@ internal static class WikipediaScoring
         // this checks the actual title shape directly instead.
         if (context.HierarchyLevel == 0 && SeasonSpecificTitleRe.IsMatch(candidate.Title))
             return new ScoreResult(0, "season-specific article, not the show itself", HardReject: true);
+
+        // Hard-reject: a discography/filmography/bibliography list page standing in for a
+        // level-0 artist/person search.
+        if (context.HierarchyLevel == 0 && DiscographySpecificTitleRe.IsMatch(candidate.Title))
+            return new ScoreResult(0, "discography/filmography/bibliography list page, not the artist's own page", HardReject: true);
 
         var reasons = new List<string>();
         var score = 0;
