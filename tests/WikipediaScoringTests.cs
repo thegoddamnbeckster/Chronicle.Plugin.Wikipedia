@@ -106,6 +106,61 @@ public class WikipediaScoringTests
         Assert.Equal(0, result.Score);
     }
 
+    [Fact]
+    public void Score_ZeroTitleOverlap_HardRejectsEvenWithStrongTypeAndYearSignals()
+    {
+        // General-case version of the "20XX in film" bug below, using a title shape the new
+        // YearSummaryArticleRe hard-reject does NOT itself match, so this isolates the OTHER,
+        // independent fix: when title similarity contributes nothing (zero token overlap between
+        // the candidate and query titles), Score() used to fall through to type+year signals
+        // alone -- up to 45 points, comfortably over the 20-point return threshold -- letting a
+        // candidate with ZERO relation to the query title win outright. Type and year are
+        // corroborating signals, not substitutes for identity.
+        var context = new MediaSearchContext(Name: "Rango", MediaTypeName: "movies", Year: 2011);
+        var result = WikipediaScoring.Score(context,
+            Page("Some Unrelated Film", description: "2011 film", extract: "Released in 2011, this film..."));
+
+        Assert.True(result.HardReject);
+        Assert.Equal(0, result.Score);
+    }
+
+    // ── Yearly-summary/list articles ("2011 in film") ────────────────────────
+
+    [Theory]
+    [InlineData("2011 in film")]
+    [InlineData("2011 in television")]
+    [InlineData("List of American films of 2011")]
+    public void Score_YearSummaryArticle_HardRejectsRegardlessOfOtherSignals(string candidateTitle)
+    {
+        // Regression test for a real production bug (2026-09-09): several real movies (Rango,
+        // Alexander, Whiplash, Going in Style, Yesterday, Seance, Hunted, Presence, 2012) had
+        // their titles overwritten with a Wikipedia "20XX in film" yearly-summary article instead
+        // of their own name. Applied at any level -- unlike the season/discography hard-rejects
+        // above, no real Chronicle item at ANY level is legitimately titled this way, so there's
+        // no level-1+ carve-out needed.
+        var context = new MediaSearchContext(Name: "Rango", MediaTypeName: "movies", Year: 2011);
+        var result = WikipediaScoring.Score(context,
+            Page(candidateTitle, description: "year in film", extract: "A year in film with many notable releases."));
+
+        Assert.True(result.HardReject);
+        Assert.Equal(0, result.Score);
+    }
+
+    [Fact]
+    public void Score_YearSummaryArticle_HardRejectsEvenWhenQueryNameItselfIsAlreadyCorrupted()
+    {
+        // The regex checks the CANDIDATE's own title shape, independent of what the query name
+        // currently says -- deliberately, so an item already corrupted by this bug (its own Name
+        // now literally "2011 in film") doesn't reconfirm the same wrong match on its next
+        // re-scrape just because the corrupted query name now shares tokens with it.
+        var context = new MediaSearchContext(Name: "2011 in film", MediaTypeName: "movies", Year: 2011);
+        var result = WikipediaScoring.Score(context,
+            Page("2011 in film", description: "year in film", extract: "A year in film with many notable releases."));
+
+        Assert.True(result.HardReject);
+        Assert.Equal(0, result.Score);
+    }
+
     // ── Media-type keyword matching ──────────────────────────────────────────
 
     [Fact]
@@ -204,9 +259,14 @@ public class WikipediaScoringTests
     public void Score_DiscographyTitle_AtLevel1_DoesNotHardReject()
     {
         // A track/album can legitimately be named this way (rare, but not this rule's concern) --
-        // the hard-reject must only fire for level-0 (whole-artist) searches.
+        // the hard-reject must only fire for level-0 (whole-artist) searches. Query name shares
+        // the candidate's own tokens (unlike a real "different work entirely" case) so this test
+        // isolates just the level-0-only carve-out, not the separate zero-title-overlap floor
+        // (see Score_ZeroTitleOverlap_HardRejectsEvenWithStrongTypeAndYearSignals above) --
+        // otherwise this would hard-reject for an unrelated reason and no longer test what its
+        // name says it tests.
         var context = new MediaSearchContext(
-            Name: "Some Compilation", MediaTypeName: "music", HierarchyLevel: 1,
+            Name: "Limp Bizkit Discography", MediaTypeName: "music", HierarchyLevel: 1,
             ParentName: "Limp Bizkit");
         var result = WikipediaScoring.Score(
             context, Page("Limp Bizkit discography", description: "Discography of an American band"));

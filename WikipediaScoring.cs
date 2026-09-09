@@ -47,6 +47,23 @@ internal static class WikipediaScoring
     private static readonly Regex DiscographySpecificTitleRe = new(
         @"\b(?:discography|filmography|bibliography)\b", RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
+    /// <summary>Matches a Wikipedia yearly-summary/list article -- "2011 in film", "2011 in
+    /// television", "List of American films of 2011" -- standing in for one specific movie/show.
+    /// Confirmed live (2026-09-09): several real movies (Rango, Alexander, Whiplash, ...) had
+    /// their titles overwritten with "20XX in film" instead of their own name. Root cause was a
+    /// scoring gap, not a search-quality problem (Wikipedia's own search correctly returns the
+    /// real "Rango (2011 film)" article first for a "Rango" query) -- see the zero-title-overlap
+    /// hard-reject below for that fix. This regex is the independent, second layer: it rejects
+    /// the candidate by its own recognizable shape regardless of what the query title currently
+    /// says, which matters because an item already corrupted by this bug has a query title that
+    /// now partially overlaps the wrong article's own title (the corruption reinforces itself on
+    /// the next re-scrape otherwise). Applied at every level -- no real Chronicle item at any
+    /// level is legitimately titled this way.</summary>
+    private static readonly Regex YearSummaryArticleRe = new(
+        @"^(?:List\s+of\s+.*\bfilms?\s+of\s+)?(?:1[89]\d{2}|20\d{2})\s+in\s+(?:film|television)\b|" +
+        @"^List\s+of\s+.*\bfilms?\s+of\s+(?:1[89]\d{2}|20\d{2})\b",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
     /// <summary>Strips a trailing Wikipedia disambiguation parenthetical -- "(film)",
     /// "(1982 film)", "(TV series)", etc. -- from a page title for DISPLAY purposes only.
     /// Never apply this to a page title used as (or to build) an ExternalId: two distinct
@@ -118,6 +135,11 @@ internal static class WikipediaScoring
         if (context.HierarchyLevel == 0 && DiscographySpecificTitleRe.IsMatch(candidate.Title))
             return new ScoreResult(0, "discography/filmography/bibliography list page, not the artist's own page", HardReject: true);
 
+        // Hard-reject: a yearly-summary/list article ("2011 in film") standing in for one
+        // specific movie/show, at any level.
+        if (YearSummaryArticleRe.IsMatch(candidate.Title))
+            return new ScoreResult(0, "yearly-summary/list article, not the item itself", HardReject: true);
+
         var reasons = new List<string>();
         var score = 0;
 
@@ -161,6 +183,20 @@ internal static class WikipediaScoring
                 var points = (int)Math.Round(45 * similarity);
                 score += points;
                 reasons.Add($"title similarity {similarity:P0}");
+            }
+            else if (similarity == 0.0)
+            {
+                // Hard-reject: literally no shared word between the candidate and query titles.
+                // Confirmed live (2026-09-09): several real movies had their titles overwritten
+                // with a Wikipedia "20XX in film" yearly-summary article -- title similarity
+                // contributed nothing (zero token overlap), so Score() fell through to type+year
+                // signals alone (up to 45 points, comfortably over the 20-point return threshold)
+                // and Wikipedia's own top hit for a bare-year-shaped query won by default, with
+                // zero actual relation to the movie being searched for. No legitimate match
+                // should ever share NO tokens at all with the title Chronicle is searching for --
+                // type and year alone are corroborating signals, not substitutes for identity.
+                return new ScoreResult(0,
+                    $"no title overlap at all: \"{candidateTitle}\" vs \"{queryName}\"", HardReject: true);
             }
         }
 
