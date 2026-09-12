@@ -70,6 +70,65 @@ public class WikipediaScoringTests
         Assert.False(result.HardReject);
     }
 
+    [Fact]
+    public void Score_TitleDiffersOnlyBySequelNumber_HardRejects()
+    {
+        // Root-caused live (2026-09-12): a real "Toy Story 4" file (correctly matched
+        // everywhere else -- TMDB movie:301528, correct cast/overview) had its Wikipedia match
+        // land on the unrelated "Toy Story 5" article instead, overwriting its own correct
+        // title. Jaccard treats "Toy Story 4" vs "Toy Story 5" as 50% similar (every token but
+        // the trailing number matches) -- combined with the type-keyword signal alone (the
+        // wrong article is still plainly a film), that clears the return threshold with zero
+        // year corroboration ever needing to agree. Each numbered franchise entry gets its own
+        // distinct Wikipedia article specifically because they are different works.
+        var context = new MediaSearchContext(Name: "Toy Story 4", MediaTypeName: "movies", Year: 2019);
+        var result = WikipediaScoring.Score(context,
+            Page("Toy Story 5", description: "2026 American animated comedy-drama film"));
+
+        Assert.Equal(0, result.Score);
+        Assert.True(result.HardReject);
+    }
+
+    [Fact]
+    public void Score_TitleDiffersOnlyBySequelNumber_ExactYearMatchStillHardRejects()
+    {
+        // The sequel-number mismatch alone is disqualifying -- it must not be treatable as "one
+        // bad signal outvoted by good ones." Even a candidate that (implausibly) also carries
+        // the query's own exact year is still a different, specifically-numbered entry.
+        var context = new MediaSearchContext(Name: "Toy Story 4", MediaTypeName: "movies", Year: 2019);
+        var result = WikipediaScoring.Score(context,
+            Page("Toy Story 5", description: "2019 American animated comedy-drama film"));
+
+        Assert.Equal(0, result.Score);
+        Assert.True(result.HardReject);
+    }
+
+    [Fact]
+    public void Score_TitlesDifferBySequelNumberButAlsoOtherWords_StillScoresBySimilarity()
+    {
+        // The hard-reject is deliberately narrow: titles must be identical in every token
+        // except the trailing number. A title that also differs somewhere else (not just a
+        // sequel-numbering coincidence) doesn't carry the same "these are definitely two
+        // different, specifically-numbered works" certainty, so it falls back to ordinary
+        // similarity scoring instead of being rejected outright.
+        var context = new MediaSearchContext(Name: "Toy Story 4", MediaTypeName: "movies");
+        var result = WikipediaScoring.Score(context, Page("Toy Adventure 5"));
+
+        Assert.False(result.HardReject);
+    }
+
+    [Fact]
+    public void Score_TitleAndNumberBothMatch_StillScoresNormally()
+    {
+        // Sanity check: the new hard-reject must only fire when the trailing numbers actually
+        // DIFFER -- an exact match (already handled earlier in Score()) is unaffected.
+        var context = new MediaSearchContext(Name: "Toy Story 4", MediaTypeName: "movies");
+        var result = WikipediaScoring.Score(context, Page("Toy Story 4"));
+
+        Assert.Equal(45, result.Score);
+        Assert.False(result.HardReject);
+    }
+
     // ── ExtractDisambiguator ─────────────────────────────────────────────────
 
     [Theory]

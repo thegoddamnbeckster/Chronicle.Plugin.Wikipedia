@@ -178,6 +178,29 @@ internal static class WikipediaScoring
                     $"person name tokens reordered: \"{candidateTitle}\" vs \"{queryName}\"", HardReject: true);
             }
 
+            // Hard-reject: candidate and query titles are identical except for a different
+            // trailing sequel number -- "Toy Story 4" vs "Toy Story 5", "Halloween 2" vs
+            // "Halloween 3". Jaccard treats these as ~50% similar (every token but the number
+            // matches), which alone is enough to clear the return threshold once combined with
+            // the type-keyword signal below -- no year corroboration ever needs to agree.
+            // Confirmed live (2026-09-12): a real "Toy Story 4" file (correctly matched
+            // everywhere else -- TMDB movie:301528, correct cast/overview) had its Wikipedia
+            // match land on the "Toy Story 5" article instead, overwriting its own correct
+            // title. Each numbered entry in a franchise gets its own distinct Wikipedia article
+            // specifically because they are different works -- a title differing ONLY in that
+            // trailing number is never a legitimate match for the query, regardless of what
+            // every other signal says.
+            var candidateTokens = cn.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            var queryTokens     = qn.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            if (candidateTokens.Length > 0 && candidateTokens.Length == queryTokens.Length &&
+                candidateTokens[..^1].SequenceEqual(queryTokens[..^1]) &&
+                IsPlainNumber(candidateTokens[^1]) && IsPlainNumber(queryTokens[^1]) &&
+                candidateTokens[^1] != queryTokens[^1])
+            {
+                return new ScoreResult(0,
+                    $"differs only by sequel number: \"{candidateTitle}\" vs \"{queryName}\"", HardReject: true);
+            }
+
             if (similarity >= 0.5)
             {
                 var points = (int)Math.Round(45 * similarity);
@@ -292,6 +315,13 @@ internal static class WikipediaScoring
 
     private static string Normalize(string s) =>
         NonWordRe.Replace(s.Trim(), " ").Trim().ToLowerInvariant();
+
+    /// <summary>True for a token that is purely digits ("4", "5") -- deliberately not roman
+    /// numerals or spelled-out numbers ("IV", "four"): the live-confirmed bug this guards
+    /// against is specifically the plain-digit sequel-numbering convention ("Toy Story 4/5"),
+    /// and a narrower check has less room to misfire on an unrelated title that happens to end
+    /// in an ordinary word.</summary>
+    private static bool IsPlainNumber(string token) => token.Length > 0 && token.All(char.IsDigit);
 
     private static double JaccardSimilarity(string a, string b)
     {
