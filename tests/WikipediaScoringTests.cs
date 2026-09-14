@@ -57,6 +57,53 @@ public class WikipediaScoringTests
     }
 
     [Fact]
+    public void Score_PeopleKnownBirthYearConflictsWithCandidate_HardRejects()
+    {
+        // Confirmed live (2026-09-14): "Arturo Castro" (the modern Broad City actor, born 1985)
+        // matched the unrelated "Arturo Castro (Mexican actor)" article (1918-1975) -- exact
+        // title match (after stripping the disambiguation suffix) plus a matching "actor" type
+        // keyword scored 70/100 with nothing to catch the 67-year-old identity mismatch, since
+        // context.Year is never set for a people query and the reordered-name-token check above
+        // only catches a different bug shape.
+        var context = new MediaSearchContext(Name: "Arturo Castro", MediaTypeName: "people", KnownBirthYear: 1985);
+        var result = WikipediaScoring.Score(context, Page(
+            "Arturo Castro (Mexican actor)",
+            extract: "Arturo Castro Rivas Cacho (March 21, 1918 – March 6, 1975) was a Mexican character actor.",
+            description: "Mexican actor"));
+
+        Assert.Equal(0, result.Score);
+        Assert.True(result.HardReject);
+    }
+
+    [Fact]
+    public void Score_PeopleKnownBirthYearMatchesCandidate_DoesNotHardReject()
+    {
+        var context = new MediaSearchContext(Name: "Arturo Castro", MediaTypeName: "people", KnownBirthYear: 1985);
+        var result = WikipediaScoring.Score(context, Page(
+            "Arturo Castro",
+            extract: "Arturo Castro (born November 26, 1985) is an American actor and writer.",
+            description: "American actor"));
+
+        Assert.False(result.HardReject);
+        Assert.True(result.Score > 0);
+    }
+
+    [Fact]
+    public void Score_PeopleNoKnownBirthYear_DoesNotHardRejectOnLifeYears()
+    {
+        // KnownBirthYear is null on the very first provider to ever search for this person (no
+        // other provider has enriched it yet) -- the signal must be a no-op, not a reject, since
+        // there's nothing yet to corroborate against.
+        var context = new MediaSearchContext(Name: "Arturo Castro", MediaTypeName: "people");
+        var result = WikipediaScoring.Score(context, Page(
+            "Arturo Castro (Mexican actor)",
+            extract: "Arturo Castro Rivas Cacho (March 21, 1918 – March 6, 1975) was a Mexican character actor.",
+            description: "Mexican actor"));
+
+        Assert.False(result.HardReject);
+    }
+
+    [Fact]
     public void Score_NonPeopleReorderedTitleTokens_StillScoresBySimilarity()
     {
         // The hard-reject above is scoped to "people" only -- movie/show titles don't carry the

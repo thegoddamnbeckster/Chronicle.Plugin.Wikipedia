@@ -259,6 +259,37 @@ internal static class WikipediaScoring
             }
         }
 
+        // Signal 3b — known birth-year corroboration for people (hard-reject on conflict).
+        // Confirmed live (2026-09-14): "Arturo Castro" (the modern Broad City actor, born 1985)
+        // matched the WRONG Wikipedia article, "Arturo Castro (Mexican actor)" (a 1918-1975
+        // Mexican film actor) -- title-exact (both normalize to bare "Arturo Castro" once the
+        // disambiguation suffix strips) plus type-match ("actor" appears in both descriptions)
+        // alone scored 70/100, comfortably over MinScoreToReturn, with zero disambiguation
+        // between two people sharing a name 67 years apart. Signal 1's own person-name-token
+        // hard-reject above only catches a reordered name, not two genuinely different people
+        // who happen to share the identical name outright -- and context.Year (Signal 3) is
+        // never set for a people query at all (see its own comment). When Chronicle already
+        // knows this person's birth year from an earlier-enriched provider, a candidate whose
+        // own extract/description states a conflicting year for its subject is almost certainly
+        // a different real person wearing the same name -- hard-reject rather than merely
+        // down-score, since the other signals here can and did clear the return threshold
+        // entirely on their own.
+        if (string.Equals(context.MediaTypeName, "people", StringComparison.OrdinalIgnoreCase) &&
+            context.KnownBirthYear.HasValue)
+        {
+            var lifeYearsHaystack = $"{description} {candidate.Extract}";
+            var mentionedYears = YearRe.Matches(lifeYearsHaystack)
+                .Select(m => int.Parse(m.Value)).Distinct().ToList();
+            if (mentionedYears.Count > 0 &&
+                mentionedYears.All(y => Math.Abs(y - context.KnownBirthYear.Value) > 1))
+            {
+                return new ScoreResult(0,
+                    $"known birth year {context.KnownBirthYear.Value} matches none of the years " +
+                    $"mentioned in the candidate ({string.Join(", ", mentionedYears)})",
+                    HardReject: true);
+            }
+        }
+
         // Signal 4 — parent/grandparent corroboration (0-15), hierarchy levels 1-2 only.
         if (context.HierarchyLevel > 0 && !string.IsNullOrWhiteSpace(candidate.Extract))
         {
