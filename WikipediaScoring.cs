@@ -21,6 +21,22 @@ internal static class WikipediaScoring
     private static readonly Regex NonWordRe = new(@"[^\w\s]", RegexOptions.Compiled);
     private static readonly Regex YearRe = new(@"\b(1[89]\d{2}|20\d{2})\b", RegexOptions.Compiled);
 
+    /// <summary>Generational suffixes and name particles that legitimately appear on one side
+    /// of a person's name and not the other WITHOUT signaling a different real person -- unlike
+    /// an added surname/given-name (the "Jesse James" vs "Jesse James Dupree" shape the
+    /// subset/superset hard-reject below exists to catch). Caught in review (2026-09-14) before
+    /// release: the subset/superset check as first written had no such exception, so a query
+    /// like "Sammy Davis" against the correct candidate "Sammy Davis Jr." -- or "Guillermo
+    /// Toro" against "Guillermo del Toro" -- would hard-reject a genuinely correct match purely
+    /// because Chronicle's own stored name happened to omit a suffix/particle the Wikipedia
+    /// title carries. When EVERY extra token is one of these, the pair falls through to normal
+    /// similarity scoring below instead of an automatic reject.</summary>
+    private static readonly HashSet<string> BenignExtraNameTokens = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "jr", "sr", "ii", "iii", "iv", "v",
+        "de", "del", "von", "van", "da", "dos", "das", "la", "le", "bin", "al",
+    };
+
     /// <summary>Matches a Wikipedia article title that's about one SEASON of a TV show rather
     /// than the show itself -- "3rd Rock from the Sun season 1", "Fargo (season 3)", "Doctor
     /// Who series 12" -- in either the bare or parenthetical convention Wikipedia uses for
@@ -178,6 +194,50 @@ internal static class WikipediaScoring
                     $"person name tokens reordered: \"{candidateTitle}\" vs \"{queryName}\"", HardReject: true);
             }
 
+            var candidateTokens = cn.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            var queryTokens     = qn.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+
+            // Hard-reject: for `people`, the candidate's name tokens are a strict subset or
+            // superset of the query's -- every word on the shorter side also appears on the
+            // longer side, with at least one extra word tacked on (a middle name, a surname, a
+            // suffix). Confirmed live (2026-09-14): two unrelated real people both credited
+            // simply as "Jesse James" (a reality-TV mechanic from Monster Garage, and a
+            // separate child actor from The Amityville Horror/Jumper) both had their Chronicle
+            // item renamed to "Jesse James Dupree" -- a third, unrelated musician -- this way.
+            // Jaccard alone can't catch it: {jesse, james} vs {jesse, james, dupree} scores a
+            // comfortable 0.667, and combined with the type-keyword signal (Wikipedia's own
+            // description for Dupree, "American musician", doesn't conflict with anything
+            // people-specific) that alone clears MinScoreToReturn. Signal 3b's birth-year
+            // hard-reject doesn't help either -- it only fires once some OTHER provider has
+            // already supplied a birth year for this person, which neither side had yet. A
+            // shared given/family name (surnames like "James", given names like "Jesse") is
+            // common across unrelated people; requiring the FULL token set to agree, not just a
+            // majority of it, is the only signal that's actually about identity here. Same
+            // reasoning as the reordered-token hard-reject just above, generalized to cover a
+            // token added or dropped instead of only shuffled. Never applied to any other media
+            // type, where a subtitle/qualifier is routine and not a distinct-identity signal.
+            if (string.Equals(context.MediaTypeName, "people", StringComparison.OrdinalIgnoreCase) &&
+                candidateTokens.Length > 0 && queryTokens.Length > 0 &&
+                candidateTokens.Length != queryTokens.Length)
+            {
+                var candidateSet = candidateTokens.ToHashSet();
+                var querySet     = queryTokens.ToHashSet();
+                if (candidateSet.IsSubsetOf(querySet) || querySet.IsSubsetOf(candidateSet))
+                {
+                    var extraTokens = candidateSet.Count > querySet.Count
+                        ? candidateSet.Except(querySet)
+                        : querySet.Except(candidateSet);
+                    if (!extraTokens.All(t => BenignExtraNameTokens.Contains(t)))
+                    {
+                        return new ScoreResult(0,
+                            $"person name token set mismatch (extra/missing name component): \"{candidateTitle}\" vs \"{queryName}\"",
+                            HardReject: true);
+                    }
+                    // Every extra token is a known-benign suffix/particle (e.g. "Jr.", "del") --
+                    // fall through to normal similarity scoring below instead of rejecting.
+                }
+            }
+
             // Hard-reject: candidate and query titles are identical except for a different
             // trailing sequel number -- "Toy Story 4" vs "Toy Story 5", "Halloween 2" vs
             // "Halloween 3". Jaccard treats these as ~50% similar (every token but the number
@@ -190,8 +250,6 @@ internal static class WikipediaScoring
             // specifically because they are different works -- a title differing ONLY in that
             // trailing number is never a legitimate match for the query, regardless of what
             // every other signal says.
-            var candidateTokens = cn.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-            var queryTokens     = qn.Split(' ', StringSplitOptions.RemoveEmptyEntries);
             if (candidateTokens.Length > 0 && candidateTokens.Length == queryTokens.Length &&
                 candidateTokens[..^1].SequenceEqual(queryTokens[..^1]) &&
                 IsPlainNumber(candidateTokens[^1]) && IsPlainNumber(queryTokens[^1]) &&
@@ -230,7 +288,7 @@ internal static class WikipediaScoring
             var keywords = GetTypeKeywords(context.MediaTypeName, context.HierarchyLevel);
             var descLower = description.ToLowerInvariant();
 
-            if (keywords.Count > 0 && keywords.Any(k => descLower.Contains(k, StringComparison.Ordinal)))
+            if (keywords.Count > 0 && keywords.Any(k => ContainsKeyword(descLower, k)))
             {
                 score += 25;
                 reasons.Add("type match");
@@ -321,11 +379,21 @@ internal static class WikipediaScoring
         foreach (var (otherType, otherLevel) in AllOtherTypeProbes(mediaTypeName))
         {
             var otherKeywords = GetTypeKeywords(otherType, otherLevel);
-            if (otherKeywords.Count > 0 && otherKeywords.Any(k => descriptionLower.Contains(k, StringComparison.Ordinal)))
+            if (otherKeywords.Count > 0 && otherKeywords.Any(k => ContainsKeyword(descriptionLower, k)))
                 return true;
         }
         return false;
     }
+
+    /// <summary>Whole-word/-phrase match of a type keyword inside a description, not a plain
+    /// substring match. Caught in review before release: plain `string.Contains` let "American
+    /// filmmaker" match the "movies" keyword "film" (a substring of "filmmaker"), hard-rejecting
+    /// a correct "people" candidate via LooksLikeConflictingType as if their description named a
+    /// conflicting type. `\b` word-boundary anchors fix this for both single-word keywords
+    /// ("film" no longer matches inside "filmmaker" -- there's no boundary between the two m's)
+    /// and multi-word keywords ("film director" still needs boundaries at both ends).</summary>
+    private static bool ContainsKeyword(string haystackLower, string keyword) =>
+        Regex.IsMatch(haystackLower, $@"\b{Regex.Escape(keyword)}\b");
 
     private static IEnumerable<(string?, int)> AllOtherTypeProbes(string? excludeType)
     {

@@ -104,6 +104,105 @@ public class WikipediaScoringTests
     }
 
     [Fact]
+    public void Score_PeopleCandidateHasExtraNameToken_HardRejects()
+    {
+        // Confirmed live (2026-09-14): two unrelated real people both credited simply as
+        // "Jesse James" (a reality-TV mechanic from Monster Garage, and a separate child actor
+        // from The Amityville Horror/Jumper) both had their Chronicle item renamed to "Jesse
+        // James Dupree" -- a third, unrelated musician -- this way. Jaccard alone can't catch
+        // it: {jesse, james} vs {jesse, james, dupree} scores 0.667, clearing the return
+        // threshold once combined with the type-keyword signal (Wikipedia's description for
+        // Dupree, "American musician", doesn't conflict with anything people-specific), and
+        // neither side had a known birth year yet for Signal 3b to catch it either.
+        var context = new MediaSearchContext(Name: "Jesse James", MediaTypeName: "people");
+        var result = WikipediaScoring.Score(context,
+            Page("Jesse James Dupree", description: "American musician"));
+
+        Assert.Equal(0, result.Score);
+        Assert.True(result.HardReject);
+    }
+
+    [Fact]
+    public void Score_PeopleQueryHasExtraNameToken_HardRejects()
+    {
+        // Same shape as above, direction reversed -- the query carries the extra token and the
+        // candidate is the shorter name. Both directions are the same underlying bug (an extra
+        // full name component signals a different specific person), so both must reject.
+        var context = new MediaSearchContext(Name: "Jesse James Dupree", MediaTypeName: "people");
+        var result = WikipediaScoring.Score(context,
+            Page("Jesse James", description: "American television personality"));
+
+        Assert.Equal(0, result.Score);
+        Assert.True(result.HardReject);
+    }
+
+    [Fact]
+    public void Score_TypeKeywordAsSubstringOfUnrelatedWord_DoesNotConflict()
+    {
+        // Caught in review before release: LooksLikeConflictingType used a plain substring
+        // match, so a "people" description of "American filmmaker" was treated as conflicting
+        // with the "people" type because "filmmaker" contains "film" -- a "movies" keyword --
+        // as a substring, hard-rejecting a correct match purely on word-boundary sloppiness.
+        var context = new MediaSearchContext(Name: "Jane Director", MediaTypeName: "people");
+        var result = WikipediaScoring.Score(context,
+            Page("Jane Director", description: "American filmmaker"));
+
+        Assert.False(result.HardReject);
+    }
+
+    [Fact]
+    public void Score_PeopleCandidateHasBenignSuffixToken_DoesNotHardReject()
+    {
+        // Caught in review before release: the subset/superset hard-reject as first written had
+        // no exception for a generational suffix, so a query missing "Jr." against the correct
+        // Wikipedia title would have hard-rejected a genuinely correct match.
+        var context = new MediaSearchContext(Name: "Sammy Davis", MediaTypeName: "people");
+        var result = WikipediaScoring.Score(context,
+            Page("Sammy Davis Jr.", description: "American singer"));
+
+        Assert.False(result.HardReject);
+        Assert.True(result.Score > 0);
+    }
+
+    [Fact]
+    public void Score_PeopleCandidateHasBenignParticleToken_DoesNotHardReject()
+    {
+        // Same shape, a name particle instead of a suffix -- "Guillermo del Toro" is routinely
+        // shortened to "Guillermo Toro" by sources that don't preserve the particle.
+        var context = new MediaSearchContext(Name: "Guillermo Toro", MediaTypeName: "people");
+        var result = WikipediaScoring.Score(context,
+            Page("Guillermo del Toro", description: "Mexican film director"));
+
+        Assert.False(result.HardReject);
+        Assert.True(result.Score > 0);
+    }
+
+    [Fact]
+    public void Score_PeopleCandidateHasBenignAndNonBenignExtraTokens_StillHardRejects()
+    {
+        // A benign suffix token does NOT give a free pass to an actual extra name component
+        // sitting alongside it -- only an ALL-benign difference is exempted.
+        var context = new MediaSearchContext(Name: "Jesse James", MediaTypeName: "people");
+        var result = WikipediaScoring.Score(context,
+            Page("Jesse James Dupree Jr.", description: "American musician"));
+
+        Assert.Equal(0, result.Score);
+        Assert.True(result.HardReject);
+    }
+
+    [Fact]
+    public void Score_NonPeopleCandidateHasExtraToken_StillScoresBySimilarity()
+    {
+        // The hard-reject above is scoped to "people" only -- a movie/show subtitle or
+        // qualifier ("Toy Story" vs "Toy Story 2") is routine and not a distinct-identity
+        // signal the way an added name component is for a person.
+        var context = new MediaSearchContext(Name: "Toy Story", MediaTypeName: "movies");
+        var result = WikipediaScoring.Score(context, Page("Toy Story 2"));
+
+        Assert.False(result.HardReject);
+    }
+
+    [Fact]
     public void Score_NonPeopleReorderedTitleTokens_StillScoresBySimilarity()
     {
         // The hard-reject above is scoped to "people" only -- movie/show titles don't carry the
