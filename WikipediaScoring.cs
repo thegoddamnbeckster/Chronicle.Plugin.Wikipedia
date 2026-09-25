@@ -348,6 +348,27 @@ internal static class WikipediaScoring
             }
         }
 
+        // Signal 3c — credited-title corroboration for people with NO known birth year.
+        // Confirmed live (2026-09-25): a credit-only TMDB "Cameron Brown" (no birth date, no bio) was
+        // matched to the 1945-born jazz bassist's article purely on the shared name. With nothing to
+        // compare years against, the one thing we do know about this person is what they are
+        // credited on. An article that states its subject's birth year yet mentions none of those
+        // titles cannot be tied to this person, so it is rejected -- a missing Wikipedia link is
+        // recoverable, a wrongly attached one shows another person's photo and biography.
+        if (string.Equals(context.MediaTypeName, "people", StringComparison.OrdinalIgnoreCase) &&
+            !context.KnownBirthYear.HasValue &&
+            context.KnownCreditTitles is { Count: > 0 } creditTitles)
+        {
+            var creditHaystack = $"{description} {candidate.Extract}";
+            if (YearRe.IsMatch(creditHaystack) &&
+                !creditTitles.Any(t => t.Length >= 3 && creditHaystack.Contains(t, StringComparison.OrdinalIgnoreCase)))
+            {
+                return new ScoreResult(0,
+                    "no birth year is known and none of this person's credited titles appear in the candidate",
+                    HardReject: true);
+            }
+        }
+
         // Signal 4 — parent/grandparent corroboration (0-15), hierarchy levels 1-2 only.
         if (context.HierarchyLevel > 0 && !string.IsNullOrWhiteSpace(candidate.Extract))
         {

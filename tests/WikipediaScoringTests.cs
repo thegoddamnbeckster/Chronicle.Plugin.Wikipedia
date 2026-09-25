@@ -104,6 +104,49 @@ public class WikipediaScoringTests
     }
 
     [Fact]
+    public void Score_PeopleNoBirthYearButCreditedTitlesAbsentFromCandidate_HardRejects()
+    {
+        // Confirmed live (2026-09-25): a credit-only TMDB "Cameron Brown" (no birth date, no bio) was
+        // matched to the 1945-born jazz bassist's article on the shared name alone. Nothing to compare
+        // years against, but the article states a birth year and mentions none of what this person
+        // is credited on, so it cannot be tied to them.
+        var context = new MediaSearchContext(Name: "Cameron Brown", MediaTypeName: "people",
+            KnownCreditTitles: ["Blade Runner 2049", "Sound of Metal"]);
+        var result = WikipediaScoring.Score(context, Page(
+            "Cameron Brown (musician)",
+            extract: "Cameron Langdon Brown (born December 21, 1945) is an American jazz double bassist.",
+            description: "American jazz double bassist"));
+
+        Assert.Equal(0, result.Score);
+        Assert.True(result.HardReject);
+    }
+
+    [Fact]
+    public void Score_PeopleNoBirthYearAndCandidateMentionsACreditedTitle_DoesNotHardReject()
+    {
+        var context = new MediaSearchContext(Name: "Cameron Brown", MediaTypeName: "people",
+            KnownCreditTitles: ["Sound of Metal"]);
+        var result = WikipediaScoring.Score(context, Page(
+            "Cameron Brown",
+            extract: "Cameron Brown (born 1980) is an American sound editor, known for Sound of Metal.",
+            description: "American sound editor"));
+
+        Assert.False(result.HardReject);
+    }
+
+    [Fact]
+    public void Score_PeopleNoBirthYearAndNoCredits_StaysANoOp()
+    {
+        var context = new MediaSearchContext(Name: "Cameron Brown", MediaTypeName: "people");
+        var result = WikipediaScoring.Score(context, Page(
+            "Cameron Brown (musician)",
+            extract: "Cameron Langdon Brown (born December 21, 1945) is an American jazz double bassist.",
+            description: "American jazz double bassist"));
+
+        Assert.False(result.HardReject);
+    }
+
+    [Fact]
     public void Score_PeopleCandidateHasExtraNameToken_HardRejects()
     {
         // Confirmed live (2026-09-14): two unrelated real people both credited simply as
