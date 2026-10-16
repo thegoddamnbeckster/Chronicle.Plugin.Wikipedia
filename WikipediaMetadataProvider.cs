@@ -22,7 +22,13 @@ public sealed class WikipediaMetadataProvider : IMetadataProvider, IExternalIdPo
 
     /// <summary>The article is found by searching the item's name, so two different people with one name resolve to the same page:
     /// agreeing on it is never proof of identity.</summary>
-    public ExternalIdPolicy GetExternalIdPolicy() => new() { Source = "wikipedia", NameDerived = true, DisambiguatedTitleField = "title" };
+    public ExternalIdPolicy GetExternalIdPolicy() => new()
+    {
+        Source = "wikipedia", NameDerived = true, DisambiguatedTitleField = "title",
+        // "1981 births" in an article's categories says whose article it is; "2022 in film" is a page about no single title.
+        BirthYearTagPattern = @"^\s*(?<year>\d{4})\s+births\s*$",
+        NotAnEntityTitlePattern = @"^\s*\d{4}\s+in\s+(film|television)\s*$",
+    };
     public string Name => "Wikipedia";
     public string Version => "1.0.0";
     public string Author => "Chronicle Contributors";
