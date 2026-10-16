@@ -22,7 +22,7 @@ public sealed class WikipediaMetadataProvider : IMetadataProvider, IExternalIdPo
 
     /// <summary>The article is found by searching the item's name, so two different people with one name resolve to the same page:
     /// agreeing on it is never proof of identity.</summary>
-    public ExternalIdPolicy GetExternalIdPolicy() => new() { Source = "wikipedia", NameDerived = true };
+    public ExternalIdPolicy GetExternalIdPolicy() => new() { Source = "wikipedia", NameDerived = true, DisambiguatedTitleField = "title" };
     public string Name => "Wikipedia";
     public string Version => "1.0.0";
     public string Author => "Chronicle Contributors";
