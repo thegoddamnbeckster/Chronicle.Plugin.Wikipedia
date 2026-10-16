@@ -106,6 +106,7 @@ public sealed class WikipediaMetadataProvider : IMetadataProvider
             // something watched/listened to on its own. Keeps it out of the tracked Library
             // grid, which otherwise auto-tracks (Unwatched) every root-level item.
             IsTrackable = false,
+            IsPersonType = true,
             SupportedFields = ["title", "overview", "poster_url", "tags", "extended_data",
                                 "birth_date", "death_date"],
         },
