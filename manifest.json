@@ -6,6 +6,9 @@
   "description":           "Broad fallback summaries, article sections, and images from Wikipedia for any media type.",
   "min_chronicle_version": "0.7.0",
   "entry_type":            "Chronicle.Plugin.Wikipedia.WikipediaMetadataProvider",
+  "sourceUrls": [
+    { "match": "^wikipedia:([a-z\\-]+):(.+)$", "url": "https://$1.wikipedia.org/wiki/$2" }
+  ],
   "iconUrl":               "https://en.wikipedia.org/static/apple-touch/wikipedia.png",
   "brandColorLight":       "#000000",
   "brandColorDark":        "#F0F0F0",
