@@ -465,6 +465,45 @@ public class WikipediaScoringTests
         Assert.Equal(0, result.Score);
     }
 
+    [Theory]
+    [InlineData("Canada's Worst Driver 5", null, "season of Canadian reality television series")]
+    [InlineData("Canada's Worst Driver 8", "Canada's Worst Driver 8 is the eighth season of the Canadian reality TV show Canada's Worst Driver.", null)]
+    [InlineData("Some Show 2", "Some Show 2 is the second season of the American drama series Some Show.", "American drama")]
+    public void Score_SeasonArticleWithNoSeasonInItsTitle_AtLevel0_HardRejects(string title, string? extract, string? description)
+    {
+        // Live 2026-10-25: these were offered as shows because only the TITLE was checked for "season".
+        var context = new MediaSearchContext(Name: "Canada's Worst Driver", MediaTypeName: "tv", HierarchyLevel: 0);
+        var result = WikipediaScoring.Score(context, Page(title, extract: extract, description: description));
+
+        Assert.True(result.HardReject);
+        Assert.Equal(0, result.Score);
+    }
+
+    [Fact]
+    public void Score_AShowsOwnArticle_AtLevel0_IsNotTakenForASeason()
+    {
+        var context = new MediaSearchContext(Name: "Canada's Worst Driver", MediaTypeName: "tv", HierarchyLevel: 0);
+        var result = WikipediaScoring.Score(context, Page(
+            "Canada's Worst Driver",
+            extract: "Canada's Worst Driver is a Canadian reality television series that aired on Discovery Channel from 2005, running for fourteen seasons.",
+            description: "Canadian reality television series"));
+
+        Assert.False(result.HardReject);
+    }
+
+    [Fact]
+    public void Score_ASeasonArticleByDescription_AtLevel1_DoesNotHardReject()
+    {
+        var context = new MediaSearchContext(
+            Name: "Season 5", MediaTypeName: "tv", HierarchyLevel: 1, ParentName: "Canada's Worst Driver");
+        var result = WikipediaScoring.Score(context, Page(
+            "Canada's Worst Driver 5",
+            extract: "Canada's Worst Driver 5 is the fifth season of the Canadian reality television show.",
+            description: "season of Canadian reality television series"));
+
+        Assert.False(result.HardReject);
+    }
+
     [Fact]
     public void Score_SeasonSpecificTitle_AtLevel1_DoesNotHardReject()
     {

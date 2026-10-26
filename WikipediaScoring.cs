@@ -48,6 +48,19 @@ internal static class WikipediaScoring
         @"\b(?:season|series)\s+(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten)\b",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
+    /// <summary>What a season article says about itself when its title does not: Wikidata describes it
+    /// as "season of a Canadian reality television series", and the article opens "Canada's Worst
+    /// Driver 5 is the fifth season of the Canadian reality television show ...". Confirmed live
+    /// (2026-10-25): "Canada's Worst Driver 5" and "... 8" were offered as shows on the add-media search
+    /// because neither title contains the word "season", so SeasonSpecificTitleRe could not see them.
+    /// A show's own description ("Canadian reality television series") never says "season of".</summary>
+    private static readonly Regex SeasonDescriptionRe = new(
+        @"\bseason\s+of\b", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    private static readonly Regex SeasonOpeningSentenceRe = new(
+        @"^[^.]{0,200}?\b(?:is|was)\s+(?:the\s+|an?\s+)(?:[\w'-]+\s+){0,3}season\s+of\b",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
     /// <summary>Matches a Wikipedia article title that's a discography/filmography/bibliography
     /// LIST page for an artist/creator rather than that person or group's own page --
     /// "Limp Bizkit discography", "Tom Hanks filmography" -- same class of bug as
@@ -128,6 +141,14 @@ internal static class WikipediaScoring
         };
     }
 
+    private static bool IsSeasonArticle(WikiSearchPage candidate)
+    {
+        var description = candidate.Terms?.Description?.FirstOrDefault();
+        if (!string.IsNullOrEmpty(description) && SeasonDescriptionRe.IsMatch(description))
+            return true;
+        return !string.IsNullOrEmpty(candidate.Extract) && SeasonOpeningSentenceRe.IsMatch(candidate.Extract);
+    }
+
     public static ScoreResult Score(MediaSearchContext context, WikiSearchPage candidate)
     {
         // Hard-reject: disambiguation page (a list of links, not an article about the item).
@@ -145,6 +166,11 @@ internal static class WikipediaScoring
         // this checks the actual title shape directly instead.
         if (context.HierarchyLevel == 0 && SeasonSpecificTitleRe.IsMatch(candidate.Title))
             return new ScoreResult(0, "season-specific article, not the show itself", HardReject: true);
+
+        // Same rejection when the title gives nothing away ("Canada's Worst Driver 5"): the article's
+        // own description and opening sentence say it is a season.
+        if (context.HierarchyLevel == 0 && IsSeasonArticle(candidate))
+            return new ScoreResult(0, "season article (by its description), not the show itself", HardReject: true);
 
         // Hard-reject: a discography/filmography/bibliography list page standing in for a
         // level-0 artist/person search.
