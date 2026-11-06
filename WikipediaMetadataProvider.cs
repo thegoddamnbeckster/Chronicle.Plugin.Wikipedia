@@ -30,7 +30,7 @@ public sealed class WikipediaMetadataProvider : IMetadataProvider, IExternalIdPo
         NotAnEntityTitlePattern = @"^\s*\d{4}\s+in\s+(film|television)\s*$",
     };
     public string Name => "Wikipedia";
-    public string Version => "1.0.0";
+    public string Version => System.Reflection.CustomAttributeExtensions.GetCustomAttribute<System.Reflection.AssemblyInformationalVersionAttribute>(typeof(WikipediaMetadataProvider).Assembly)?.InformationalVersion.Split('+')[0] ?? "1.0.17";
     public string Author => "Chronicle Contributors";
 
     // ── Settings keys ─────────────────────────────────────────────────────────
@@ -462,10 +462,7 @@ public sealed class WikipediaMetadataProvider : IMetadataProvider, IExternalIdPo
     // ── IMetadataProvider: image ──────────────────────────────────────────────
 
     public Task<byte[]> GetImageAsync(string url, CancellationToken ct = default)
-    {
-        EnsureConfigured();
-        return _client!.GetImageBytesAsync(url, ct);
-    }
+        => throw new NotSupportedException("Images are loaded by the browser straight from the address in the metadata; this plugin has nothing to fetch.");
 
     // ── IMetadataProvider: health ─────────────────────────────────────────────
 
