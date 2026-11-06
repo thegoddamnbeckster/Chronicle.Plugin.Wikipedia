@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <Version>1.0.17</Version>
+    <Version>1.0.18</Version>
     <TargetFramework>net9.0</TargetFramework>
     <AssemblyName>Chronicle.Plugin.Wikipedia</AssemblyName>
     <RootNamespace>Chronicle.Plugin.Wikipedia</RootNamespace>
