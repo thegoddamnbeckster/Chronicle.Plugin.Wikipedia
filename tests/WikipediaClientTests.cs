@@ -62,6 +62,23 @@ public class WikipediaClientTests
     }
 
     [Fact]
+    public async Task GetArticleHtmlAsync_PersistentRateLimit_IsAPauseThatSaysHowLongWikipediaAsked()
+    {
+        var handler = new StubHandler(_ =>
+        {
+            var resp = new HttpResponseMessage(HttpStatusCode.TooManyRequests);
+            resp.Headers.RetryAfter = new System.Net.Http.Headers.RetryConditionHeaderValue(TimeSpan.FromMilliseconds(1));
+            return resp;
+        });
+        var client = new WikipediaClient(new HttpClient(handler), "en", minRequestIntervalMs: 1);
+
+        var ex = await Assert.ThrowsAsync<HttpRequestException>(() => client.GetArticleHtmlAsync("Test_Article", CancellationToken.None));
+
+        Assert.Equal(HttpStatusCode.TooManyRequests, ex.StatusCode);      // a pause for Chronicle's queue, not this item's failure
+        Assert.Equal(TimeSpan.FromMilliseconds(1), ex.Data["RetryAfter"]);
+    }
+
+    [Fact]
     public async Task GetArticleHtmlAsync_PersistentServiceUnavailable_EventuallyThrows()
     {
         // No Retry-After header, so this exercises the exponential-backoff fallback path —

@@ -232,6 +232,15 @@ internal sealed class WikipediaClient : IDisposable
             var isRetryable = response.StatusCode == HttpStatusCode.TooManyRequests
                             || response.StatusCode == HttpStatusCode.ServiceUnavailable;
 
+            if (isRetryable && attempt >= maxRetries)
+            {
+                // Out of retries and Wikipedia is still saying slow down or busy: a pause (not this item's fault), with what it asked
+                // for, so Chronicle's queue holds the item and carries on with the rest.
+                var asked = response.Headers.RetryAfter?.Delta;
+                response.Dispose();
+                throw WithRetryAfter(new HttpRequestException("Wikipedia is busy or rate limiting requests", null, HttpStatusCode.TooManyRequests), asked);
+            }
+
             if (!isRetryable || attempt >= maxRetries)
             {
                 if (attempt > 0)
@@ -256,6 +265,17 @@ internal sealed class WikipediaClient : IDisposable
         foreach (var header in original.Headers)
             clone.Headers.TryAddWithoutValidation(header.Key, header.Value);
         return clone;
+    }
+
+
+    /// <summary>
+    /// Says how long the provider asked clients to wait, on the exception, under the key Chronicle's queue reads
+    /// (<c>Data["RetryAfter"]</c>, a TimeSpan): the host never waits less, and an item held for a long time goes to the back of the queue.
+    /// </summary>
+    private static HttpRequestException WithRetryAfter(HttpRequestException ex, TimeSpan? after)
+    {
+        if (after is { } a && a > TimeSpan.Zero) ex.Data["RetryAfter"] = a;
+        return ex;
     }
 
     public void Dispose() => _http.Dispose();
